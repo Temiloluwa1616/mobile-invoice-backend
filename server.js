@@ -11,45 +11,120 @@ const templateRoutes = require('./routes/template');
 const receiptRoutes = require('./routes/receipt');
 
 const app = express();
-app.use(cors());
-app.use(express.json());
 
+// CORS configuration
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://localhost:8081', 'exp://*'], // Add your app URLs
+  credentials: true
+}));
 
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-
-
-// ensure pdf output dir
-if (!fs.existsSync(process.env.PDF_OUTPUT_DIR || './generated_pdfs')) {
-  fs.mkdirSync(process.env.PDF_OUTPUT_DIR || './generated_pdfs', { recursive: true });
+// Ensure pdf output dir
+const pdfOutputDir = process.env.PDF_OUTPUT_DIR || './generated_pdfs';
+if (!fs.existsSync(pdfOutputDir)) {
+  fs.mkdirSync(pdfOutputDir, { recursive: true });
 }
 
+// Ensure other directories exist
+const directories = [
+  path.join(__dirname, 'public', 'uploads'),
+  path.join(__dirname, 'public', 'previews')
+];
+
+directories.forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
+
+// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/receipts', receiptRoutes);
 
-app.use('/api/templates', require('./routes/template'));
+// Static files
 app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
-app.use('/previews', express.static(path.join(__dirname, 'public/previews')));
+app.use('/previews', express.static(path.join(__dirname, 'public', 'previews')));
+app.use('/pdfs', express.static(path.join(__dirname, pdfOutputDir)));
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    message: 'Server is running',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
 
-// serve generated pdfs (optional)
-app.use('/pdfs', express.static(path.join(__dirname, process.env.PDF_OUTPUT_DIR)));
-
+// Test endpoint
 app.get("/ping", (req, res) => {
   res.send("pong");
 });
 
-
-
-
-const PORT = process.env.PORT || 4000;
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(()=> {
-    console.log('Mongo connected');
-   app.listen(4000, "0.0.0.0", () => {
-  console.log("🚀 Server running on http://0.0.0.0:4000");
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'Invoice App Backend API',
+    version: '1.0.0',
+    endpoints: {
+      auth: '/api/auth',
+      invoices: '/api/invoices',
+      templates: '/api/templates',
+      receipts: '/api/receipts'
+    }
+  });
 });
 
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    message: 'Route not found',
+    path: req.originalUrl 
+  });
+});
+
+// Error handling middleware
+app.use((error, req, res, next) => {
+  console.error('Error:', error);
+  res.status(500).json({ 
+    message: 'Internal server error',
+    error: process.env.NODE_ENV === 'production' ? {} : error.message 
+  });
+});
+
+const PORT = process.env.PORT || 4000;
+
+// MongoDB connection with better error handling
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log('✅ MongoDB connected successfully');
+    
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
+      console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`🔗 Health check: http://0.0.0.0:${PORT}/api/health`);
+    });
   })
-  .catch(err => console.error(err));
+  .catch(err => {
+    console.error('❌ MongoDB connection error:', err);
+    console.log('💡 Please check your MONGO_URI environment variable');
+    process.exit(1); // Exit if DB connection fails
+  });
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Shutting down server...');
+  await mongoose.connection.close();
+  console.log('✅ MongoDB connection closed');
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\n🛑 Server terminated');
+  await mongoose.connection.close();
+  process.exit(0);
+});
