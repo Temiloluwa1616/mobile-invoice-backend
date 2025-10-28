@@ -14,7 +14,7 @@ const app = express();
 
 // CORS configuration
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:8081', 'exp://*'], // Add your app URLs
+  origin: ['http://localhost:3000', 'http://localhost:8081', 'exp://*'],
   credentials: true
 }));
 
@@ -79,8 +79,8 @@ app.get('/', (req, res) => {
   });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
+// 404 handler - FIXED
+app.use((req, res) => {
   res.status(404).json({ 
     message: 'Route not found',
     path: req.originalUrl 
@@ -98,7 +98,7 @@ app.use((error, req, res, next) => {
 
 const PORT = process.env.PORT || 4000;
 
-// MongoDB connection with better error handling
+// MongoDB connection
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('✅ MongoDB connected successfully');
@@ -106,25 +106,16 @@ mongoose.connect(process.env.MONGO_URI)
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`🔗 Health check: http://0.0.0.0:${PORT}/api/health`);
     });
   })
   .catch(err => {
     console.error('❌ MongoDB connection error:', err);
-    console.log('💡 Please check your MONGO_URI environment variable');
-    process.exit(1); // Exit if DB connection fails
+    process.exit(1);
   });
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('\n🛑 Shutting down server...');
-  await mongoose.connection.close();
-  console.log('✅ MongoDB connection closed');
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  console.log('\n🛑 Server terminated');
   await mongoose.connection.close();
   process.exit(0);
 });
