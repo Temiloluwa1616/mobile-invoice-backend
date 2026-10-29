@@ -20,6 +20,7 @@ router.post('/register', async (req,res) => {
   } catch (err) { res.status(500).send({ message: err.message }); }
 });
 
+
 router.post('/login', async (req,res) => {
   const { email, password } = req.body;
   const u = await User.findOne({ email });
